@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-large-runner
+    container:
+      image: ubuntu:latest
+      options: --privileged    
     steps:
       - name: Install Dependencies
         run: |
@@ -53,9 +56,7 @@ jobs:
           cd yocto-astrial
           source astrial-setup-env -b build
           export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE"
-          echo 'BB_NETWORK_ISOLATION_ENABLED = "0"' > conf/network_on.conf
-          echo 'PSEUDO_DISABLED = "1"' >> conf/network_on.conf
-          bitbake -R conf/network_on.conf system-astrial-image        
+          bitbake system-astrial-image     
 
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
