@@ -1,35 +1,36 @@
 name: Yocto Build
-
 on:
   push:
     branches:
       - '**'  # Matches all branches
-
 jobs:
   build:
     runs-on: ubuntu-large-runner
     container:
       image: ubuntu:latest
-      options: --privileged    
+      options: --privileged  # Run with privileged mode
     steps:
       - name: Install Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get upgrade -y
-          sudo apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential \
+          apt-get update
+          apt-get upgrade -y
+          apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential \
             chrpath socat cpio python3 python3-pip python3-pexpect xz-utils debianutils \
             iputils-ping python3-git python3-jinja2 libegl1 libsdl1.2-dev \
             python3-subunit mesa-common-dev zstd liblz4-tool file locales libacl1 \
             curl python-is-python3 bmap-tools
-          sudo locale-gen en_US.UTF-8
-
+          locale-gen en_US.UTF-8
       - name: Install repo tool
         run: |
           mkdir -p ~/bin
           curl http://commondatastorage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+x ~/bin/repo
-          echo "${HOME}/bin" >> $GITHUB_PATH
-
+          export PATH=~/bin:$PATH
+          echo "PATH=$PATH:~/bin" >> $GITHUB_ENV
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       - name: Initialize Yocto Environment
         run: |
           mkdir -p yocto-astrial
@@ -38,7 +39,6 @@ jobs:
           mkdir -p .repo/local_manifests
           wget --directory-prefix .repo/local_manifests https://raw.githubusercontent.com/robertoviola-systemelectronics/meta-sysele-nxp-5.15.71/refs/heads/os-release-signing/manifest/astrial-5.15.71.xml
           repo sync
-
       - name: Generate Build Signature
         run: |
           # Generate build signature using GitHub secret
@@ -50,14 +50,21 @@ jobs:
             BUILD_SIGNATURE="unofficial"
           fi
           echo "BUILD_SIGNATURE=${BUILD_SIGNATURE}" >> $GITHUB_ENV
-
       - name: Build Image
         run: |
           cd yocto-astrial
           source astrial-setup-env -b build
           export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE"
-          bitbake system-astrial-image     
-
+          
+          # Add the necessary configuration to disable network isolation
+          echo 'BB_NETWORK_ISOLATION_ENABLED = "0"' >> conf/local.conf
+          echo 'PSEUDO_DISABLED = "1"' >> conf/local.conf
+          
+          # Add exclusions for the problematic tasks
+          echo 'RM_WORK_EXCLUDE += "gcc-source linux-imx"' >> conf/local.conf
+          
+          # Run bitbake with environment variables explicitly set
+          PSEUDO_DISABLED=1 BB_NETWORK_ISOLATION_ENABLED=0 bitbake system-astrial-image     
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         with:
