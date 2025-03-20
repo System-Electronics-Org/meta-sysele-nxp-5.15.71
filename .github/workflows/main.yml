@@ -43,6 +43,12 @@ jobs:
           wget --directory-prefix .repo/local_manifests https://raw.githubusercontent.com/robertoviola-systemelectronics/meta-sysele-nxp-5.15.71/refs/heads/os-release-signing/manifest/astrial-5.15.71.xml
           repo sync
 
+      - name: Patch Bitbake network isolation
+        run: |
+          cd yocto-astrial/sources/poky/bitbake/lib/bb/
+          cp utils.py utils.py.bak          
+          sed -i 's/def disable_network(uid, gid):/def disable_network(uid, gid):\n    if os.environ.get("GITHUB_ACTIONS") == "true":\n        bb.warn("Running in GitHub Actions, skipping network isolation")\n        return/g' utils.py
+
       - name: Generate Build Signature
         run: |
           # Generate build signature using GitHub secret
