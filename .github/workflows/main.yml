@@ -78,7 +78,7 @@ jobs:
           # Forza l'esecuzione in modo non isolato
           BB_HASHSERVE = "0"
           BB_SIGNATURE_HANDLER = "basic"
-          EOF        
+          EOF
           
           # Pass the signature to bitbake
           bitbake --runall=fetch system-astrial-image
