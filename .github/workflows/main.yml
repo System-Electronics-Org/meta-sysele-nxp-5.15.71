@@ -69,6 +69,7 @@ jobs:
                 chown -R yoctouser:yoctouser /yocto-astrial && 
                 su - yoctouser -c 'cd /yocto-astrial && 
                 bash -c \"source astrial-setup-env -b build && 
+                bitbake --runall=fetch system-astrial-image &&
                 export GITHUB_ACTIONS=\\\"true\\\" && 
                 export BB_ISOLATE_NETWORK=\\\"0\\\" && 
                 export BB_NO_NETWORK=\\\"0\\\" && 
