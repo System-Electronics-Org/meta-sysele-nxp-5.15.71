@@ -1,85 +1,48 @@
 name: Yocto Build
+
 on:
   push:
     branches:
       - '**'  # Matches all branches
+
 jobs:
   build:
     runs-on: ubuntu-large-runner
-    container:
-      image: ubuntu:latest
-      options: --privileged  # Run with privileged mode
     steps:
+
+      - name: Configure network settings
+        run: |
+          # Configurare variabili d'ambiente per Yocto per disabilitare l'isolamento di rete
+          echo "BB_ISOLATE_NETWORK=0" >> $GITHUB_ENV
+          echo "BB_NO_NETWORK=0" >> $GITHUB_ENV
+          
       - name: Install Dependencies
         run: |
-          apt-get update
-          apt-get upgrade -y
-          apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential \
+          sudo apt-get update
+          sudo apt-get upgrade -y
+          sudo apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential \
             chrpath socat cpio python3 python3-pip python3-pexpect xz-utils debianutils \
             iputils-ping python3-git python3-jinja2 libegl1 libsdl1.2-dev \
             python3-subunit mesa-common-dev zstd liblz4-tool file locales libacl1 \
-            curl python-is-python3 bmap-tools bash sudo
-          locale-gen en_US.UTF-8
-          
-          # Create a non-root user for running bitbake
-          useradd -m -s /bin/bash builder
-          echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder
-        shell: bash
+            curl python-is-python3 bmap-tools
+          sudo locale-gen en_US.UTF-8
+
       - name: Install repo tool
         run: |
-          mkdir -p /home/builder/bin
-          curl http://commondatastorage.googleapis.com/git-repo-downloads/repo > /home/builder/bin/repo
-          chmod a+x /home/builder/bin/repo
-          chown -R builder:builder /home/builder/bin
-        shell: bash
+          mkdir -p ~/bin
+          curl http://commondatastorage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          echo "${HOME}/bin" >> $GITHUB_PATH
+
       - name: Initialize Yocto Environment
         run: |
-          # Create directory and set proper ownership
-          mkdir -p /home/builder/yocto-astrial
-          chown -R builder:builder /home/builder/yocto-astrial
-          
-          # Run as the builder user - first cd to the directory then run repo init
-          su - builder -c "export PATH=\$PATH:/home/builder/bin && mkdir -p /home/builder/yocto-astrial && cd /home/builder/yocto-astrial && repo init -u https://github.com/nxp-imx/imx-manifest -b imx-linux-kirkstone -m imx-5.15.71-2.2.0.xml"
-          
-          # Create local manifests directory with proper permissions
-          su - builder -c "mkdir -p /home/builder/yocto-astrial/.repo/local_manifests"
-          
-          # Download manifest
-          su - builder -c "wget --directory-prefix /home/builder/yocto-astrial/.repo/local_manifests https://raw.githubusercontent.com/robertoviola-systemelectronics/meta-sysele-nxp-5.15.71/refs/heads/os-release-signing/manifest/astrial-5.15.71.xml"
-          
-          # Sync the repo
-          su - builder -c "export PATH=\$PATH:/home/builder/bin && cd /home/builder/yocto-astrial && repo sync"
-        shell: bash
-      - name: Modify BitBake Code
-        run: |
-          # First check if the file exists
-          BITBAKE_UTILS_FILE=/home/builder/yocto-astrial/sources/poky/bitbake/lib/bb/utils.py
-          if [ -f "$BITBAKE_UTILS_FILE" ]; then
-            # Find the disable_network function and modify it
-            # Using sed to find the function and add a return statement at the beginning
-            sed -i '/def disable_network/a \    # Skip network isolation\n    return' $BITBAKE_UTILS_FILE
-            echo "Modified BitBake utils.py to bypass network isolation"
-          else
-            echo "BitBake utils.py file not found at expected location!"
-            find /home/builder/yocto-astrial -name "utils.py" | grep bitbake
-          fi
-          
-          # Create configuration to bypass other potential issues
-          mkdir -p /home/builder/yocto-astrial/build/conf
-          cat > /home/builder/yocto-astrial/build/conf/disable_network_isolation.conf << 'EOF'
-          # Disable network isolation
-          BB_NETWORK_ISOLATION_ENABLED = "0"
-          # Disable pseudo
-          PSEUDO_DISABLED = "1"
-          # Disable rm_work completely using correct syntax
-          INHERIT:remove = "rm_work"
-          # Set timezone
-          BB_DATESTAMP_TIMEZONE = "UTC"
-          EOF
-          
-          # Set ownership
-          chown -R builder:builder /home/builder/yocto-astrial
-        shell: bash
+          mkdir -p yocto-astrial
+          cd yocto-astrial
+          repo init -u https://github.com/nxp-imx/imx-manifest -b imx-linux-kirkstone -m imx-5.15.71-2.2.0.xml
+          mkdir -p .repo/local_manifests
+          wget --directory-prefix .repo/local_manifests https://raw.githubusercontent.com/robertoviola-systemelectronics/meta-sysele-nxp-5.15.71/refs/heads/os-release-signing/manifest/astrial-5.15.71.xml
+          repo sync
+
       - name: Generate Build Signature
         run: |
           # Generate build signature using GitHub secret
@@ -90,19 +53,22 @@ jobs:
           else
             BUILD_SIGNATURE="unofficial"
           fi
-          # Make this available to the builder user
-          echo "export BUILD_SIGNATURE=${BUILD_SIGNATURE}" > /home/builder/build_env
-          chown builder:builder /home/builder/build_env
-        shell: bash
+          echo "BUILD_SIGNATURE=${BUILD_SIGNATURE}" >> $GITHUB_ENV
+
       - name: Build Image
         run: |
-          # Run bitbake as the builder user with our modified code
-          su - builder -c "source /home/builder/build_env && export PATH=\$PATH:/home/builder/bin && cd /home/builder/yocto-astrial && . astrial-setup-env -b build && export BB_ENV_PASSTHROUGH_ADDITIONS=\"GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE\" && bitbake -R conf/disable_network_isolation.conf system-astrial-image"
-        shell: bash
+          cd yocto-astrial
+          source astrial-setup-env -b build
+          echo "BB_GENERATE_MIRROR_TARBALLS = \"1\"" >> conf/local.conf
+          echo "BB_NO_NETWORK = \"0\"" >> conf/local.conf          
+           # Pass the signature to bitbake
+          export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE"
+          bitbake system-astrial-image
+
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: yocto-build
           path: |
-            /home/builder/yocto-astrial/build/tmp/deploy/images/astrial-imx8mp/imx-boot-astrial-imx8mp-sd.bin-flash_evk
-            /home/builder/yocto-astrial/build/tmp/deploy/images/astrial-imx8mp/system-astrial-image-astrial-imx8mp-*.rootfs.wic.zst
+            yocto-astrial/build/tmp/deploy/images/astrial-imx8mp/imx-boot-astrial-imx8mp-sd.bin-flash_evk
+            yocto-astrial/build/tmp/deploy/images/astrial-imx8mp/system-astrial-image-astrial-imx8mp-*.rootfs.wic.zst
