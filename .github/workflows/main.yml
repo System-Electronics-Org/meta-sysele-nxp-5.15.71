@@ -65,8 +65,8 @@ jobs:
           echo 'BB_NETWORK_ISOLATION_ENABLED = "0"' >> conf/local.conf
           echo 'PSEUDO_DISABLED = "1"' >> conf/local.conf
           
-          # Completely disable the rm_work class to avoid the problematic tasks
-          echo 'INHERIT_remove = "rm_work"' >> conf/local.conf
+          # Disable rm_work using the newer syntax
+          echo 'INHERIT:remove = "rm_work"' >> conf/local.conf
           
           # Run bitbake with environment variables explicitly set
           PSEUDO_DISABLED=1 BB_NETWORK_ISOLATION_ENABLED=0 bitbake system-astrial-image     
