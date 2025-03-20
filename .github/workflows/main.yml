@@ -43,14 +43,6 @@ jobs:
           wget --directory-prefix .repo/local_manifests https://raw.githubusercontent.com/robertoviola-systemelectronics/meta-sysele-nxp-5.15.71/refs/heads/os-release-signing/manifest/astrial-5.15.71.xml
           repo sync
 
-      - name: Patch bitbake-worker
-        run: |
-          UTILS_PY=$(find /home/runner/work/meta-sysele-nxp-5.15.71/meta-sysele-nxp-5.15.71/yocto-astrial/sources/poky/bitbake/lib/bb -name "utils.py")
-          cp $UTILS_PY ${UTILS_PY}.bak
-          DN_LINE=$(grep -n "def disable_network" $UTILS_PY | head -1 | cut -d: -f1)
-          sed -i "${DN_LINE}a\\    if os.environ.get(\"GITHUB_ACTIONS\") == \"true\":\\n        return" $UTILS_PY
-          cat $UTILS_PY | grep -A3 "def disable_network" || echo "Modifica non trovata"
-
       - name: Generate Build Signature
         run: |
           # Generate build signature using GitHub secret
@@ -67,12 +59,35 @@ jobs:
         run: |
           cd yocto-astrial
           source astrial-setup-env -b build
-          echo 'BB_NETWORK_ISOLATION_FORCEON = "0"' >> conf/local.conf
-          echo "BB_GENERATE_MIRROR_TARBALLS = \"1\"" >> conf/local.conf
-          echo "BB_NO_NETWORK = \"0\"" >> conf/local.conf          
+          # Configurazione massiccia per evitare problemi di isolamento
+          cat >> conf/local.conf << 'EOF'
+          # Disabilita l'isolamento di rete
+          BB_NETWORK_ISOLATION_FORCEON = "0"
+          BB_ISOLATE_NETWORK = "0"
+          BB_NO_NETWORK = "0"
+          
+          # Disabilita multiprocessing
+          BB_NUMBER_THREADS = "1"
+          PARALLEL_MAKE = "-j1"
+          BB_NUMBER_PARSE_THREADS = "1"
+          
+          # Altre opzioni per evitare problemi di isolamento
+          BB_SETSCENE_ENFORCE = "0"
+          BB_SETSCENE_VERIFY_FUNCTION = "0"
+          
+          # Forza l'esecuzione in modo non isolato
+          BB_HASHSERVE = "0"
+          BB_SIGNATURE_HANDLER = "basic"
+          EOF
+          
+          # Esporta variabili d'ambiente per influenzare il comportamento di BitBake
+          export GITHUB_ACTIONS="true"
+          export BB_NO_NETWORK="0"
+          export BB_ISOLATE_NETWORK="0"
+          
            # Pass the signature to bitbake
-          export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE"
-          bitbake system-astrial-image
+          export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_NO_NETWORK BB_ISOLATE_NETWORK"
+          python3 -c "import os; os.environ['BB_ENV_PASSTHROUGH_ADDITIONS']='GITHUB_ACTIONS BB_NO_NETWORK BB_ISOLATE_NETWORK'; os.environ['GITHUB_ACTIONS']='true'; os.environ['BB_NO_NETWORK']='0'; os.environ['BB_ISOLATE_NETWORK']='0'; os.system('bitbake --no-setscene --no-network -k system-astrial-image')"
 
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
