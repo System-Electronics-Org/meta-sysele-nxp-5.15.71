@@ -57,17 +57,22 @@ jobs:
 
       - name: Build Image
         run: |
-              docker run --privileged -v ${{ github.workspace }}/yocto-astrial:/yocto-astrial ubuntu:20.04 bash -c "
-                cd /yocto-astrial && 
-                source astrial-setup-env -b build &&
-                bitbake --runall=fetch system-astrial-image &&
-                export GITHUB_ACTIONS=\"true\" &&
-                export BB_ISOLATE_NETWORK=\"0\" &&
-                export BB_NO_NETWORK=\"0\" &&
-                export BUILD_SIGNATURE=\"$BUILD_SIGNATURE\" &&
-                export BB_ENV_PASSTHROUGH_ADDITIONS=\"GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK BB_NO_NETWORK\" &&
-                bitbake --no-setscene -k system-astrial-image
-              "
+          docker run --privileged -v ${{ github.workspace }}/yocto-astrial:/yocto-astrial ubuntu:20.04 bash -c "
+            apt-get update && 
+            apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential chrpath socat cpio python3 python3-pip python3-pexpect xz-utils debianutils iputils-ping python3-git python3-jinja2 libegl1 libsdl1.2-dev python3-subunit mesa-common-dev zstd liblz4-tool file locales libacl1 curl && 
+            locale-gen en_US.UTF-8 &&
+            groupadd -g 1000 yoctouser && 
+            useradd -u 1000 -g 1000 -m yoctouser && 
+            chown -R yoctouser:yoctouser /yocto-astrial && 
+            su - yoctouser -c 'cd /yocto-astrial && 
+            source astrial-setup-env -b build && 
+            export GITHUB_ACTIONS=\"true\" && 
+            export BB_ISOLATE_NETWORK=\"0\" && 
+            export BB_NO_NETWORK=\"0\" && 
+            export BUILD_SIGNATURE=\"$BUILD_SIGNATURE\" && 
+            export BB_ENV_PASSTHROUGH_ADDITIONS=\"GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK BB_NO_NETWORK\" && 
+            bitbake --no-setscene -k system-astrial-image'
+          "
 
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
