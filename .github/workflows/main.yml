@@ -82,11 +82,10 @@ jobs:
           
           # Esporta variabili d'ambiente per influenzare il comportamento di BitBake
           export GITHUB_ACTIONS="true"
-          export BB_NO_NETWORK="0"
           export BB_ISOLATE_NETWORK="0"
           
            # Pass the signature to bitbake
-          export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_NO_NETWORK BB_ISOLATE_NETWORK"
+          export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK"
           bitbake --no-setscene -k system-astrial-image
 
       - name: Archive Build Artifacts
