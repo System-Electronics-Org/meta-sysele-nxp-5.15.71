@@ -59,26 +59,6 @@ jobs:
         run: |
           cd yocto-astrial
           source astrial-setup-env -b build
-          # Configurazione massiccia per evitare problemi di isolamento
-          cat >> conf/local.conf << 'EOF'
-          # Disabilita l'isolamento di rete
-          BB_NETWORK_ISOLATION_FORCEON = "0"
-          BB_ISOLATE_NETWORK = "0"
-          BB_NO_NETWORK = "0"
-          
-          # Disabilita multiprocessing
-          BB_NUMBER_THREADS = "1"
-          PARALLEL_MAKE = "-j1"
-          BB_NUMBER_PARSE_THREADS = "1"
-          
-          # Altre opzioni per evitare problemi di isolamento
-          BB_SETSCENE_ENFORCE = "0"
-          BB_SETSCENE_VERIFY_FUNCTION = "0"
-          
-          # Forza l'esecuzione in modo non isolato
-          BB_HASHSERVE = "0"
-          BB_SIGNATURE_HANDLER = "basic"
-          EOF
           
           # Pass the signature to bitbake
           bitbake --runall=fetch system-astrial-image
