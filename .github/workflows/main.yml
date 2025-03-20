@@ -45,11 +45,11 @@ jobs:
 
       - name: Patch bitbake-worker
         run: |
-          BITBAKE_WORKER=$(find /home/runner/work/meta-sysele-nxp-5.15.71/meta-sysele-nxp-5.15.71/yocto-astrial/sources/poky/bitbake/bin -name "bitbake-worker")
-          cp $BITBAKE_WORKER ${BITBAKE_WORKER}.bak
-          NETWORK_LINE=$(grep -n "disable_network" $BITBAKE_WORKER | head -1 | cut -d: -f1)
-          sed -i "${NETWORK_LINE}s/.*/    try:\n        bb.utils.disable_network(uid, gid)\n    except PermissionError:\n        bb.warn(\"Cannot disable network in this environment, continuing without isolation\")\n        pass/" $BITBAKE_WORKER
-          cat $BITBAKE_WORKER | grep -A5 "try:" || echo "Modifica non trovata"
+          UTILS_PY=$(find /home/runner/work/meta-sysele-nxp-5.15.71/meta-sysele-nxp-5.15.71/yocto-astrial/sources/poky/bitbake/lib/bb -name "utils.py")
+          cp $UTILS_PY ${UTILS_PY}.bak
+          DN_LINE=$(grep -n "def disable_network" $UTILS_PY | head -1 | cut -d: -f1)
+          sed -i "${DN_LINE}a\\    if os.environ.get(\"GITHUB_ACTIONS\") == \"true\":\\n        return" $UTILS_PY
+          cat $UTILS_PY | grep -A3 "def disable_network" || echo "Modifica non trovata"
 
       - name: Generate Build Signature
         run: |
