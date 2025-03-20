@@ -59,10 +59,12 @@ jobs:
         run: |
           cd yocto-astrial
           source astrial-setup-env -b build
+          echo 'BB_NETWORK_ISOLATION_FORCEON = "0"' >> conf/local.conf
           echo "BB_GENERATE_MIRROR_TARBALLS = \"1\"" >> conf/local.conf
           echo "BB_NO_NETWORK = \"0\"" >> conf/local.conf          
            # Pass the signature to bitbake
           export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE"
+          bitbake --runall=fetch system-astrial-image
           bitbake system-astrial-image
 
       - name: Archive Build Artifacts
