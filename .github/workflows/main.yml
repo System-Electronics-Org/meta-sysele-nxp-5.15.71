@@ -58,6 +58,10 @@ jobs:
       - name: Build Image
         run: |
           docker run --privileged -v ${{ github.workspace }}/yocto-astrial:/yocto-astrial ubuntu:20.04 bash -c "
+            export DEBIAN_FRONTEND=noninteractive &&
+            export TZ=Europe/Rome &&
+            apt-get update && 
+            apt-get install -y tzdata &&
             apt-get update && 
             apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential chrpath socat cpio python3 python3-pip python3-pexpect xz-utils debianutils iputils-ping python3-git python3-jinja2 libegl1 libsdl1.2-dev python3-subunit mesa-common-dev zstd liblz4-tool file locales libacl1 curl && 
             locale-gen en_US.UTF-8 &&
