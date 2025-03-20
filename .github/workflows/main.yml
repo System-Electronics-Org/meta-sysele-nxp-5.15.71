@@ -18,8 +18,9 @@ jobs:
             chrpath socat cpio python3 python3-pip python3-pexpect xz-utils debianutils \
             iputils-ping python3-git python3-jinja2 libegl1 libsdl1.2-dev \
             python3-subunit mesa-common-dev zstd liblz4-tool file locales libacl1 \
-            curl python-is-python3 bmap-tools
+            curl python-is-python3 bmap-tools bash
           locale-gen en_US.UTF-8
+        shell: bash
       - name: Install repo tool
         run: |
           mkdir -p ~/bin
@@ -27,6 +28,7 @@ jobs:
           chmod a+x ~/bin/repo
           export PATH=~/bin:$PATH
           echo "PATH=$PATH:~/bin" >> $GITHUB_ENV
+        shell: bash
       - name: Checkout Repository
         uses: actions/checkout@v3
         with:
@@ -39,6 +41,7 @@ jobs:
           mkdir -p .repo/local_manifests
           wget --directory-prefix .repo/local_manifests https://raw.githubusercontent.com/robertoviola-systemelectronics/meta-sysele-nxp-5.15.71/refs/heads/os-release-signing/manifest/astrial-5.15.71.xml
           repo sync
+        shell: bash
       - name: Generate Build Signature
         run: |
           # Generate build signature using GitHub secret
@@ -50,21 +53,24 @@ jobs:
             BUILD_SIGNATURE="unofficial"
           fi
           echo "BUILD_SIGNATURE=${BUILD_SIGNATURE}" >> $GITHUB_ENV
+        shell: bash
       - name: Build Image
         run: |
           cd yocto-astrial
-          source astrial-setup-env -b build
+          # Use dot instead of source for POSIX shell compatibility
+          . astrial-setup-env -b build
           export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE"
           
           # Add the necessary configuration to disable network isolation
           echo 'BB_NETWORK_ISOLATION_ENABLED = "0"' >> conf/local.conf
           echo 'PSEUDO_DISABLED = "1"' >> conf/local.conf
           
-          # Add exclusions for the problematic tasks
-          echo 'RM_WORK_EXCLUDE += "gcc-source linux-imx"' >> conf/local.conf
+          # Completely disable the rm_work class to avoid the problematic tasks
+          echo 'INHERIT_remove = "rm_work"' >> conf/local.conf
           
           # Run bitbake with environment variables explicitly set
           PSEUDO_DISABLED=1 BB_NETWORK_ISOLATION_ENABLED=0 bitbake system-astrial-image     
+        shell: bash
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         with:
