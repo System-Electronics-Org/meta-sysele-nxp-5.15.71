@@ -43,11 +43,28 @@ jobs:
           wget --directory-prefix .repo/local_manifests https://raw.githubusercontent.com/robertoviola-systemelectronics/meta-sysele-nxp-5.15.71/refs/heads/os-release-signing/manifest/astrial-5.15.71.xml
           repo sync
 
-      - name: Patch Bitbake network isolation
+      - name: Patch BitBake worker functionality
         run: |
-          cd yocto-astrial/sources/poky/bitbake/lib/bb/
-          cp utils.py utils.py.bak          
-          sed -i 's/def disable_network(uid, gid):/def disable_network(uid, gid):\n    if os.environ.get("GITHUB_ACTIONS") == "true":\n        bb.warn("Running in GitHub Actions, skipping network isolation")\n        return/g' utils.py
+          cat > bitbake-worker.patch << 'EOF'
+          --- bitbake-worker.orig      2023-04-01 00:00:00.000000000 +0000
+          +++ bitbake-worker   2023-04-01 00:00:00.000000000 +0000
+          @@ -266,7 +266,11 @@
+               uid = worker.parent.worker_uid
+               gid = worker.parent.worker_gid
+               create_process_group = worker.parent.create_process_group
+          -    bb.utils.disable_network(uid, gid)
+          +    try:
+          +        bb.utils.disable_network(uid, gid)
+          +    except PermissionError:
+          +        bb.warn("Cannot disable network in this environment, continuing without network isolation")
+          +        pass
+               if worker.parent.umask:
+                   os.umask(worker.parent.umask)
+          EOF
+          
+          BITBAKE_WORKER=$(find /home/runner/work/meta-sysele-nxp-5.15.71/meta-sysele-nxp-5.15.71/yocto-astrial/sources/poky/bitbake/bin -name "bitbake-worker")
+          cp $BITBAKE_WORKER ${BITBAKE_WORKER}.bak
+          patch $BITBAKE_WORKER < bitbake-worker.patch || echo "Patch può aver fallito, ma continuiamo"
 
       - name: Generate Build Signature
         run: |
@@ -70,7 +87,6 @@ jobs:
           echo "BB_NO_NETWORK = \"0\"" >> conf/local.conf          
            # Pass the signature to bitbake
           export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE"
-          bitbake --runall=fetch system-astrial-image
           bitbake system-astrial-image
 
       - name: Archive Build Artifacts
