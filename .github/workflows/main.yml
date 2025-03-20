@@ -87,7 +87,7 @@ jobs:
           
            # Pass the signature to bitbake
           export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_NO_NETWORK BB_ISOLATE_NETWORK"
-          python3 -c "import os; os.environ['BB_ENV_PASSTHROUGH_ADDITIONS']='GITHUB_ACTIONS BB_NO_NETWORK BB_ISOLATE_NETWORK'; os.environ['GITHUB_ACTIONS']='true'; os.environ['BB_NO_NETWORK']='0'; os.environ['BB_ISOLATE_NETWORK']='0'; os.system('bitbake --no-setscene -k system-astrial-image')"
+          bitbake --no-setscene -k system-astrial-image
 
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
