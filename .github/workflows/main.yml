@@ -57,19 +57,17 @@ jobs:
 
       - name: Build Image
         run: |
-          cd yocto-astrial
-          source astrial-setup-env -b build
-          
-          # Pass the signature to bitbake
-          bitbake --runall=fetch system-astrial-image
-
-          # Esporta variabili d'ambiente per influenzare il comportamento di BitBake
-          export GITHUB_ACTIONS="true"
-          export BB_ISOLATE_NETWORK="0"
-          export BB_NO_NETWORK="0"
-          
-          export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK BB_NO_NETWORK"
-          bitbake --no-setscene -k system-astrial-image
+              docker run --privileged -v ${{ github.workspace }}/yocto-astrial:/yocto-astrial ubuntu:20.04 bash -c "
+                cd /yocto-astrial && 
+                source astrial-setup-env -b build &&
+                bitbake --runall=fetch system-astrial-image &&
+                export GITHUB_ACTIONS=\"true\" &&
+                export BB_ISOLATE_NETWORK=\"0\" &&
+                export BB_NO_NETWORK=\"0\" &&
+                export BUILD_SIGNATURE=\"$BUILD_SIGNATURE\" &&
+                export BB_ENV_PASSTHROUGH_ADDITIONS=\"GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK BB_NO_NETWORK\" &&
+                bitbake --no-setscene -k system-astrial-image
+              "
 
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
