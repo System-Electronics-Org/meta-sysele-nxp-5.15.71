@@ -38,8 +38,8 @@ jobs:
           mkdir -p /home/builder/yocto-astrial
           chown -R builder:builder /home/builder/yocto-astrial
           
-          # Run as the builder user 
-          su - builder -c "export PATH=\$PATH:/home/builder/bin && cd /home/builder && repo init -u https://github.com/nxp-imx/imx-manifest -b imx-linux-kirkstone -m imx-5.15.71-2.2.0.xml -d yocto-astrial"
+          # Run as the builder user - first cd to the directory then run repo init
+          su - builder -c "export PATH=\$PATH:/home/builder/bin && mkdir -p /home/builder/yocto-astrial && cd /home/builder/yocto-astrial && repo init -u https://github.com/nxp-imx/imx-manifest -b imx-linux-kirkstone -m imx-5.15.71-2.2.0.xml"
           
           # Create local manifests directory with proper permissions
           su - builder -c "mkdir -p /home/builder/yocto-astrial/.repo/local_manifests"
