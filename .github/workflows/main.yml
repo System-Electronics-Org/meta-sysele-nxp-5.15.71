@@ -18,7 +18,7 @@ jobs:
             chrpath socat cpio python3 python3-pip python3-pexpect xz-utils debianutils \
             iputils-ping python3-git python3-jinja2 libegl1 libsdl1.2-dev \
             python3-subunit mesa-common-dev zstd liblz4-tool file locales libacl1 \
-            curl python-is-python3 bmap-tools bash sudo patch
+            curl python-is-python3 bmap-tools bash sudo
           locale-gen en_US.UTF-8
           
           # Create a non-root user for running bitbake
@@ -50,27 +50,19 @@ jobs:
           # Sync the repo
           su - builder -c "export PATH=\$PATH:/home/builder/bin && cd /home/builder/yocto-astrial && repo sync"
         shell: bash
-      - name: Patch BitBake
+      - name: Modify BitBake Code
         run: |
-          # Create a patch file to disable network isolation
-          cat > /tmp/bitbake-patch.patch << 'EOF'
-          --- a/lib/bb/utils.py
-          +++ b/lib/bb/utils.py
-          @@ -1627,6 +1627,10 @@
-           
-           def disable_network(uid, gid):
-               """Disable network access for the given uid."""
-          +    # Skip network isolation in this environment
-          +    # This patch is specifically for GitHub Actions
-          +    return
-          +
-               try:
-                   with open("/proc/self/uid_map", "w") as f:
-                       f.write(f"0 {uid} 1\n")
-          EOF
-          
-          # Apply the patch to the BitBake code
-          patch -p1 < /tmp/bitbake-patch.patch -d /home/builder/yocto-astrial/sources/poky/bitbake/
+          # First check if the file exists
+          BITBAKE_UTILS_FILE=/home/builder/yocto-astrial/sources/poky/bitbake/lib/bb/utils.py
+          if [ -f "$BITBAKE_UTILS_FILE" ]; then
+            # Find the disable_network function and modify it
+            # Using sed to find the function and add a return statement at the beginning
+            sed -i '/def disable_network/a \    # Skip network isolation\n    return' $BITBAKE_UTILS_FILE
+            echo "Modified BitBake utils.py to bypass network isolation"
+          else
+            echo "BitBake utils.py file not found at expected location!"
+            find /home/builder/yocto-astrial -name "utils.py" | grep bitbake
+          fi
           
           # Create configuration to bypass other potential issues
           mkdir -p /home/builder/yocto-astrial/build/conf
@@ -79,8 +71,8 @@ jobs:
           BB_NETWORK_ISOLATION_ENABLED = "0"
           # Disable pseudo
           PSEUDO_DISABLED = "1"
-          # Disable rm_work completely
-          INHERIT_remove = "rm_work"
+          # Disable rm_work completely using correct syntax
+          INHERIT:remove = "rm_work"
           # Set timezone
           BB_DATESTAMP_TIMEZONE = "UTC"
           EOF
@@ -104,7 +96,7 @@ jobs:
         shell: bash
       - name: Build Image
         run: |
-          # Run bitbake as the builder user with our patched code
+          # Run bitbake as the builder user with our modified code
           su - builder -c "source /home/builder/build_env && export PATH=\$PATH:/home/builder/bin && cd /home/builder/yocto-astrial && . astrial-setup-env -b build && export BB_ENV_PASSTHROUGH_ADDITIONS=\"GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE\" && bitbake -R conf/disable_network_isolation.conf system-astrial-image"
         shell: bash
       - name: Archive Build Artifacts
