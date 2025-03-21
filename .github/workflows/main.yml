@@ -12,7 +12,7 @@ jobs:
 
       - name: Configure network settings
         run: |
-          # Configurare variabili d'ambiente per Yocto per disabilitare l'isolamento di rete
+          # Configure environment variables for Yocto to disable network isolation
           echo "BB_ISOLATE_NETWORK=0" >> $GITHUB_ENV
           echo "BB_NO_NETWORK=0" >> $GITHUB_ENV
           
@@ -57,7 +57,7 @@ jobs:
 
       - name: Build Image
         run: |
-              docker run --privileged -v ${{ github.workspace }}/yocto-astrial:/yocto-astrial ubuntu:20.04 bash -c "
+              docker run --privileged --cap-add=SYS_ADMIN --security-opt apparmor=unconfined -v ${{ github.workspace }}/yocto-astrial:/yocto-astrial ubuntu:20.04 bash -c "
                 export DEBIAN_FRONTEND=noninteractive &&
                 export TZ=Europe/Rome &&
                 apt-get update && 
@@ -69,12 +69,12 @@ jobs:
                 chown -R yoctouser:yoctouser /yocto-astrial && 
                 su - yoctouser -c 'cd /yocto-astrial && 
                 bash -c \"source astrial-setup-env -b build && 
-                bitbake --runall=fetch system-astrial-image &&
-                export GITHUB_ACTIONS=\\\"true\\\" && 
-                export BB_ISOLATE_NETWORK=\\\"0\\\" && 
-                export BB_NO_NETWORK=\\\"0\\\" && 
-                export BUILD_SIGNATURE=\\\"$BUILD_SIGNATURE\\\" && 
+                # Set environment variables to disable network isolation
+                export BB_ISOLATE_NETWORK=0 && 
+                export BB_NO_NETWORK=0 && 
+                # Make sure these variables are passed to BitBake
                 export BB_ENV_PASSTHROUGH_ADDITIONS=\\\"GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK BB_NO_NETWORK\\\" && 
+                bitbake --runall=fetch system-astrial-image &&
                 bitbake --no-setscene -k system-astrial-image\"'
               "
 
