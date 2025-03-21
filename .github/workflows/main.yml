@@ -11,6 +11,11 @@ jobs:
     steps:
       - name: Install Dependencies
         run: |
+          # Configure environment
+          echo "BB_ISOLATE_NETWORK=0" >> $GITHUB_ENV
+          echo "BB_NO_NETWORK=0" >> $GITHUB_ENV
+          
+          # Install required packages
           sudo apt-get update
           sudo apt-get upgrade -y
           sudo apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential \
@@ -36,6 +41,34 @@ jobs:
           wget --directory-prefix .repo/local_manifests https://raw.githubusercontent.com/robertoviola-systemelectronics/meta-sysele-nxp-5.15.71/refs/heads/os-release-signing/manifest/astrial-5.15.71.xml
           repo sync
 
+      - name: Create Patch for BitBake Network Isolation
+        run: |
+          # Find the BitBake worker script path
+          BB_WORKER=$(find yocto-astrial/sources -name "bitbake-worker" -type f | head -n 1)
+          if [ -n "$BB_WORKER" ]; then
+            echo "Found BitBake worker at $BB_WORKER"
+            # Backup the original file
+            cp "$BB_WORKER" "$BB_WORKER.orig"
+            # Patch the file to disable network isolation
+            sed -i 's/bb.utils.disable_network(uid, gid)/# Network isolation disabled/' "$BB_WORKER"
+            echo "Patched BitBake worker successfully"
+          else
+            echo "Warning: Could not find BitBake worker script"
+          fi
+          
+          # Find the BitBake utils.py file
+          BB_UTILS=$(find yocto-astrial/sources -name "utils.py" -path "*/bitbake/lib/bb/*" -type f | head -n 1)
+          if [ -n "$BB_UTILS" ]; then
+            echo "Found BitBake utils.py at $BB_UTILS"
+            # Backup the original file
+            cp "$BB_UTILS" "$BB_UTILS.orig"
+            # Patch the file to disable network isolation
+            sed -i 's/def disable_network(uid, gid):/def disable_network(uid, gid):\n    return  # Function disabled/' "$BB_UTILS"
+            echo "Patched BitBake utils.py successfully"
+          else
+            echo "Warning: Could not find BitBake utils.py"
+          fi
+
       - name: Generate Build Signature
         run: |
           # Generate build signature using GitHub secret
@@ -48,97 +81,24 @@ jobs:
           fi
           echo "BUILD_SIGNATURE=${BUILD_SIGNATURE}" >> $GITHUB_ENV
 
-      - name: Prepare Custom Dockerfile
+      - name: Build Yocto Image
         run: |
-          # Create a modified version of the Dockerfile that adds unshare capability
-          cat <<EOF > Dockerfile.yocto
-          FROM ubuntu:20.04
-
-          # Install dependencies
-          ENV DEBIAN_FRONTEND=noninteractive
-          ENV TZ=Europe/Rome
+          cd yocto-astrial
           
-          RUN apt-get update && \
-              apt-get install -y tzdata && \
-              apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential \
-              chrpath socat cpio python3 python3-pip python3-pexpect xz-utils debianutils \
-              iputils-ping python3-git python3-jinja2 libegl1 libsdl1.2-dev \
-              python3-subunit mesa-common-dev zstd liblz4-tool file locales libacl1 curl \
-              libcap2-bin uidmap
-
-          # Generate locales
-          RUN locale-gen en_US.UTF-8
+          # Source the build environment
+          source astrial-setup-env -b build
           
-          # Create yoctouser and setup rootless mode
-          RUN groupadd -g 1000 yoctouser && \
-              useradd -u 1000 -g 1000 -s /bin/bash -m yoctouser && \
-              mkdir -p /etc/sudoers.d && \
-              echo "yoctouser ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/yoctouser
-              
-          # Setup alternative for network isolation in BitBake
-          COPY fake-unshare.sh /usr/local/bin/unshare
-          RUN chmod +x /usr/local/bin/unshare && \
-              echo 'Installed fake unshare script'
+          # Add custom configuration
+          echo 'BB_ISOLATE_NETWORK = "0"' >> conf/local.conf
+          echo 'BB_NO_NETWORK = "0"' >> conf/local.conf
           
-          USER yoctouser
-          WORKDIR /home/yoctouser
-          EOF
+          # Run BitBake commands with network isolation disabled
+          export BB_ISOLATE_NETWORK=0
+          export BB_NO_NETWORK=0
+          export BUILD_SIGNATURE="${BUILD_SIGNATURE}"
+          export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK BB_NO_NETWORK"
           
-          # Create a fake unshare script that will be used instead of the real one
-          cat <<EOF > fake-unshare.sh
-          #!/bin/bash
-          
-          # This is a fake unshare script that doesn't actually isolate anything
-          # but pretends to do so for BitBake's satisfaction
-          
-          # Get the command to execute
-          cmd=""
-          while [[ \$# -gt 0 ]]; do
-              case \$1 in
-                  --mount|--uts|--ipc|--net|--pid|--mount-proc|-m|-u|-i|-n|-p|-f)
-                      shift
-                      ;;
-                  --mount=*|--uts=*|--ipc=*|--net=*|--pid=*|--mount-proc=*)
-                      ;;
-                  *)
-                      if [ -z "\$cmd" ]; then
-                          cmd="\$1"
-                      else
-                          cmd="\$cmd \$1"
-                      fi
-                      ;;
-              esac
-              shift
-          done
-          
-          # Execute the command without any namespace isolation
-          echo "Executing without namespace isolation: \$cmd"
-          exec \$cmd
-          EOF
-
-      - name: Build Docker Image
-        run: |
-          docker build -t yocto-builder -f Dockerfile.yocto .
-
-      - name: Build Image
-        run: |
-          docker run --privileged -v ${{ github.workspace }}/yocto-astrial:/yocto-astrial yocto-builder bash -c "
-            cd /yocto-astrial && 
-            bash -c \"source astrial-setup-env -b build && 
-            
-            # Add custom configuration to local.conf
-            echo 'BB_ISOLATE_NETWORK = \"0\"' >> conf/local.conf && 
-            echo 'BB_NO_NETWORK = \"0\"' >> conf/local.conf && 
-            
-            # Set environment variables
-            export BB_ISOLATE_NETWORK=0 && 
-            export BB_NO_NETWORK=0 && 
-            export BUILD_SIGNATURE=\\\"$BUILD_SIGNATURE\\\" && 
-            export BB_ENV_PASSTHROUGH_ADDITIONS=\\\"GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK BB_NO_NETWORK\\\" && 
-            
-            # Run BitBake commands with isolation disabled
-            bitbake -D BB_ISOLATE_NETWORK=0 -D BB_NO_NETWORK=0 --no-setscene -k system-astrial-image\"
-          "
+          bitbake -D BB_ISOLATE_NETWORK=0 -D BB_NO_NETWORK=0 --no-setscene -k system-astrial-image
 
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
