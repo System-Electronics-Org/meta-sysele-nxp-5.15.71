@@ -43,6 +43,45 @@ jobs:
           wget --directory-prefix .repo/local_manifests https://raw.githubusercontent.com/robertoviola-systemelectronics/meta-sysele-nxp-5.15.71/refs/heads/os-release-signing/manifest/astrial-5.15.71.xml
           repo sync
 
+      # Create a patched version of the BitBake utility script
+      - name: Patch Yocto Network Isolation
+        run: |
+          mkdir -p patch-files
+          
+          # Create a Python script to modify BitBake's network isolation function
+          cat <<EOF > patch-files/patch-bitbake.py
+          #!/usr/bin/env python3
+          import os
+          
+          # Path to the bb utils file in the Yocto build
+          utils_file = "yocto-astrial/sources/poky/bitbake/lib/bb/utils.py"
+          
+          # Read the file
+          with open(utils_file, 'r') as f:
+              content = f.read()
+          
+          # Find the disable_network function and modify it
+          if "def disable_network(" in content:
+              # Replace the function with a no-op version
+              modified_content = content.replace(
+                  "def disable_network(uid, gid):",
+                  "def disable_network(uid, gid):\n    # Function disabled by build script\n    return"
+              )
+              
+              # Write the modified file
+              with open(utils_file, 'w') as f:
+                  f.write(modified_content)
+              
+              print("Successfully patched BitBake network isolation")
+          else:
+              print("Warning: Could not find the disable_network function")
+          EOF
+          
+          chmod +x patch-files/patch-bitbake.py
+          
+          # Execute the patch script
+          python3 patch-files/patch-bitbake.py
+
       - name: Generate Build Signature
         run: |
           # Generate build signature using GitHub secret
@@ -57,7 +96,7 @@ jobs:
 
       - name: Build Image
         run: |
-              docker run --privileged --cap-add=SYS_ADMIN --security-opt apparmor=unconfined -v ${{ github.workspace }}/yocto-astrial:/yocto-astrial ubuntu:20.04 bash -c "
+              docker run --privileged -v ${{ github.workspace }}/yocto-astrial:/yocto-astrial ubuntu:20.04 bash -c "
                 export DEBIAN_FRONTEND=noninteractive &&
                 export TZ=Europe/Rome &&
                 apt-get update && 
@@ -67,15 +106,29 @@ jobs:
                 groupadd -g 1000 yoctouser && 
                 useradd -u 1000 -g 1000 -s /bin/bash -m yoctouser && 
                 chown -R yoctouser:yoctouser /yocto-astrial && 
+                
+                # Create a local.conf configuration file with network isolation disabled
+                mkdir -p /yocto-astrial/local-conf-extra &&
+                echo 'BB_ISOLATE_NETWORK = \"0\"' > /yocto-astrial/local-conf-extra/no-network-isolation.conf &&
+                echo 'BB_NO_NETWORK = \"0\"' >> /yocto-astrial/local-conf-extra/no-network-isolation.conf &&
+                                
                 su - yoctouser -c 'cd /yocto-astrial && 
                 bash -c \"source astrial-setup-env -b build && 
-                # Set environment variables to disable network isolation
+                
+                # Copy the local configuration override
+                cp /yocto-astrial/local-conf-extra/no-network-isolation.conf conf/local.conf.sample &&
+                cat conf/local.conf.sample >> conf/local.conf &&
+                
                 export BB_ISOLATE_NETWORK=0 && 
                 export BB_NO_NETWORK=0 && 
-                # Make sure these variables are passed to BitBake
+                export BUILD_SIGNATURE=\\\"$BUILD_SIGNATURE\\\" && 
                 export BB_ENV_PASSTHROUGH_ADDITIONS=\\\"GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK BB_NO_NETWORK\\\" && 
-                bitbake --runall=fetch system-astrial-image &&
-                bitbake --no-setscene -k system-astrial-image\"'
+                
+                # Add BB_NETWORK_ISOLATION=0 to the bitbake command line itself
+                DISABLE_NETWORK=\\\"-D BB_ISOLATE_NETWORK=0 -D BB_NO_NETWORK=0\\\" &&
+                
+                bitbake \$DISABLE_NETWORK --runall=fetch system-astrial-image &&
+                bitbake \$DISABLE_NETWORK --no-setscene -k system-astrial-image\"'
               "
 
       - name: Archive Build Artifacts
