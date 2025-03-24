@@ -94,6 +94,7 @@ jobs:
 
           # Disabling SE05x
           echo 'BBMASK += "recipes-security/se05x/se05x_04.05.01.bb"' >> conf/local.conf
+          echo 'IMAGE_INSTALL:remove = "se05x"' >> conf/local.conf
           
           # Run BitBake commands with network isolation disabled
           export BB_ISOLATE_NETWORK=0
