@@ -91,6 +91,9 @@ jobs:
           # Add custom configuration
           echo 'BB_ISOLATE_NETWORK = "0"' >> conf/local.conf
           echo 'BB_NO_NETWORK = "0"' >> conf/local.conf
+
+          # Disabling SE05x
+          echo 'BBMASK += "recipes-security/se05x/se05x_04.05.01.bb"' >> conf/local.conf
           
           # Run BitBake commands with network isolation disabled
           export BB_ISOLATE_NETWORK=0
