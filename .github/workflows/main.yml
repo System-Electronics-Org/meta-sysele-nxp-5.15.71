@@ -102,7 +102,7 @@ jobs:
           export BUILD_SIGNATURE="${BUILD_SIGNATURE}"
           export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK BB_NO_NETWORK"
           
-          bitbake -D BB_ISOLATE_NETWORK=0 -D BB_NO_NETWORK=0 --no-setscene -k system-astrial-image
+          bitbake --no-setscene -k system-astrial-image
 
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
