@@ -9,6 +9,11 @@ jobs:
   build:
     runs-on: ubuntu-large-runner
     steps:
+      - name: Show runner CPU info
+        run: |
+          nproc
+          lscpu
+          grep -E 'processor|cpu cores|siblings|model name' /proc/cpuinfo | head -n 40    
       - name: Install Dependencies
         run: |
           # Configure environment
