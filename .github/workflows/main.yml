@@ -108,12 +108,12 @@ jobs:
           export BUILD_SIGNATURE="${BUILD_SIGNATURE}"
           export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK BB_NO_NETWORK"
           
-          bitbake -D --no-setscene -k system-astrial-image
+          bitbake --no-setscene -k system-astrial-image
 
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: yocto-build
           path: |
-            yocto-astrial/build/tmp/deploy/images/astrial-imx8mp/imx-boot-astrial-imx8mp-sd.bin-flash_evk
-            yocto-astrial/build/tmp/deploy/images/astrial-imx8mp/system-astrial-image-astrial-imx8mp-*.rootfs.wic.zst
+            yocto-astrial/build/tmp/deploy/images/*/imx-boot-*-sd.bin-flash_evk
+            yocto-astrial/build/tmp/deploy/images/*/system-astrial-image-*.rootfs.wic.zst          
