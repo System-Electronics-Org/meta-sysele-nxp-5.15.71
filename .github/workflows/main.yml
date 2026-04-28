@@ -4,10 +4,91 @@ on:
   push:
     branches:
       - '**'  # Matches all branches
+  workflow_dispatch:
+    inputs:
+      machines:
+        description: "Comma-separated machine list. Leave default for all builds."
+        required: true
+        default: "astrial-8gb-imx8mp,astrial-4gb-imx8mp,astrial-2gb-imx8mp"
+        type: string
 
 jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      machines: ${{ steps.set-matrix.outputs.machines }}
+    steps:
+      - name: Select machines to build
+        id: set-matrix
+        env:
+          DEFAULT_MACHINES: astrial-8gb-imx8mp,astrial-4gb-imx8mp,astrial-2gb-imx8mp
+          REQUESTED_MACHINES: ${{ github.event.inputs.machines || '' }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${REQUESTED_MACHINES}" ]; then
+            machine_csv="${REQUESTED_MACHINES}"
+          else
+            machine_csv="${DEFAULT_MACHINES}"
+          fi
+
+          machine_csv=$(echo "${machine_csv}" | tr -d '[:space:]')
+          IFS=',' read -r -a requested <<< "${machine_csv}"
+
+          allowed_machines=(
+            "astrial-8gb-imx8mp"
+            "astrial-4gb-imx8mp"
+            "astrial-2gb-imx8mp"
+          )
+          selected_machines=()
+
+          for machine in "${requested[@]}"; do
+            [ -z "${machine}" ] && continue
+
+            is_allowed=0
+            for allowed in "${allowed_machines[@]}"; do
+              if [ "${machine}" = "${allowed}" ]; then
+                is_allowed=1
+                break
+              fi
+            done
+
+            if [ "${is_allowed}" -eq 0 ]; then
+              echo "Unsupported machine requested: ${machine}"
+              exit 1
+            fi
+
+            already_selected=0
+            for selected in "${selected_machines[@]}"; do
+              if [ "${machine}" = "${selected}" ]; then
+                already_selected=1
+                break
+              fi
+            done
+
+            if [ "${already_selected}" -eq 0 ]; then
+              selected_machines+=("${machine}")
+            fi
+          done
+
+          if [ "${#selected_machines[@]}" -eq 0 ]; then
+            echo "No valid machines selected"
+            exit 1
+          fi
+
+          matrix_json=$(printf '%s\n' "${selected_machines[@]}" | jq -R . | jq -cs .)
+          echo "machines=${matrix_json}" >> "${GITHUB_OUTPUT}"
+          echo "Selected machines: ${matrix_json}"
+
   build:
+    name: Build ${{ matrix.machine }}
+    needs: prepare-matrix
     runs-on: ubuntu-large-runner
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        machine: ${{ fromJSON(needs.prepare-matrix.outputs.machines) }}
+    env:
+      MACHINE: ${{ matrix.machine }}
     steps:
       - name: Show runner CPU info
         run: |
@@ -113,7 +194,7 @@ jobs:
       - name: Archive Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: yocto-build
+          name: yocto-build-${{ matrix.machine }}
           path: |
-            yocto-astrial/build/tmp/deploy/images/*/imx-boot-*-sd.bin-flash_evk
-            yocto-astrial/build/tmp/deploy/images/*/system-astrial-image-*.rootfs.wic.zst          
+            yocto-astrial/build/tmp/deploy/images/${{ matrix.machine }}/imx-boot-*-sd.bin-flash_evk
+            yocto-astrial/build/tmp/deploy/images/${{ matrix.machine }}/system-astrial-image-*.rootfs.wic.zst
