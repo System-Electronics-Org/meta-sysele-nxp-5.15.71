@@ -1,0 +1,200 @@
+name: Yocto Build
+
+on:
+  push:
+    branches:
+      - '**'  # Matches all branches
+  workflow_dispatch:
+    inputs:
+      machines:
+        description: "Comma-separated machine list. Leave default for all builds."
+        required: true
+        default: "astrial-8gb-imx8mp,astrial-4gb-imx8mp,astrial-2gb-imx8mp"
+        type: string
+
+jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      machines: ${{ steps.set-matrix.outputs.machines }}
+    steps:
+      - name: Select machines to build
+        id: set-matrix
+        env:
+          DEFAULT_MACHINES: astrial-8gb-imx8mp,astrial-4gb-imx8mp,astrial-2gb-imx8mp
+          REQUESTED_MACHINES: ${{ github.event.inputs.machines || '' }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${REQUESTED_MACHINES}" ]; then
+            machine_csv="${REQUESTED_MACHINES}"
+          else
+            machine_csv="${DEFAULT_MACHINES}"
+          fi
+
+          machine_csv=$(echo "${machine_csv}" | tr -d '[:space:]')
+          IFS=',' read -r -a requested <<< "${machine_csv}"
+
+          allowed_machines=(
+            "astrial-8gb-imx8mp"
+            "astrial-4gb-imx8mp"
+            "astrial-2gb-imx8mp"
+          )
+          selected_machines=()
+
+          for machine in "${requested[@]}"; do
+            [ -z "${machine}" ] && continue
+
+            is_allowed=0
+            for allowed in "${allowed_machines[@]}"; do
+              if [ "${machine}" = "${allowed}" ]; then
+                is_allowed=1
+                break
+              fi
+            done
+
+            if [ "${is_allowed}" -eq 0 ]; then
+              echo "Unsupported machine requested: ${machine}"
+              exit 1
+            fi
+
+            already_selected=0
+            for selected in "${selected_machines[@]}"; do
+              if [ "${machine}" = "${selected}" ]; then
+                already_selected=1
+                break
+              fi
+            done
+
+            if [ "${already_selected}" -eq 0 ]; then
+              selected_machines+=("${machine}")
+            fi
+          done
+
+          if [ "${#selected_machines[@]}" -eq 0 ]; then
+            echo "No valid machines selected"
+            exit 1
+          fi
+
+          matrix_json=$(printf '%s\n' "${selected_machines[@]}" | jq -R . | jq -cs .)
+          echo "machines=${matrix_json}" >> "${GITHUB_OUTPUT}"
+          echo "Selected machines: ${matrix_json}"
+
+  build:
+    name: Build ${{ matrix.machine }}
+    needs: prepare-matrix
+    runs-on: ubuntu-large-runner
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        machine: ${{ fromJSON(needs.prepare-matrix.outputs.machines) }}
+    env:
+      MACHINE: ${{ matrix.machine }}
+    steps:
+      - name: Show runner CPU info
+        run: |
+          nproc
+          lscpu
+          grep -E 'processor|cpu cores|siblings|model name' /proc/cpuinfo | head -n 40    
+      - name: Install Dependencies
+        run: |
+          # Configure environment
+          echo "BB_ISOLATE_NETWORK=0" >> $GITHUB_ENV
+          echo "BB_NO_NETWORK=0" >> $GITHUB_ENV
+          
+          # Install required packages
+          sudo apt-get update
+          sudo apt-get upgrade -y
+          sudo apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential \
+            chrpath socat cpio python3 python3-pip python3-pexpect xz-utils debianutils \
+            iputils-ping python3-git python3-jinja2 libegl1 libsdl1.2-dev \
+            python3-subunit mesa-common-dev zstd liblz4-tool file locales libacl1 \
+            curl python-is-python3 bmap-tools
+          sudo locale-gen en_US.UTF-8
+
+      - name: Install repo tool
+        run: |
+          mkdir -p ~/bin
+          curl http://commondatastorage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          echo "${HOME}/bin" >> $GITHUB_PATH
+
+      - name: Initialize Yocto Environment
+        run: |
+          mkdir -p yocto-astrial
+          cd yocto-astrial
+          repo init -u https://github.com/nxp-imx/imx-manifest -b imx-linux-kirkstone -m imx-5.15.71-2.2.0.xml
+          mkdir -p .repo/local_manifests
+          wget --directory-prefix .repo/local_manifests https://raw.githubusercontent.com/System-Electronics-Org/meta-sysele-nxp-5.15.71/refs/heads/os-release-signing/manifest/astrial-5.15.71.xml
+          repo sync
+
+      - name: Create Patch for BitBake Network Isolation
+        run: |
+          # Find the BitBake worker script path
+          BB_WORKER=$(find yocto-astrial/sources -name "bitbake-worker" -type f | head -n 1)
+          if [ -n "$BB_WORKER" ]; then
+            echo "Found BitBake worker at $BB_WORKER"
+            # Backup the original file
+            cp "$BB_WORKER" "$BB_WORKER.orig"
+            # Patch the file to disable network isolation
+            sed -i 's/bb.utils.disable_network(uid, gid)/# Network isolation disabled/' "$BB_WORKER"
+            echo "Patched BitBake worker successfully"
+          else
+            echo "Warning: Could not find BitBake worker script"
+          fi
+          
+          # Find the BitBake utils.py file
+          BB_UTILS=$(find yocto-astrial/sources -name "utils.py" -path "*/bitbake/lib/bb/*" -type f | head -n 1)
+          if [ -n "$BB_UTILS" ]; then
+            echo "Found BitBake utils.py at $BB_UTILS"
+            # Backup the original file
+            cp "$BB_UTILS" "$BB_UTILS.orig"
+            # Patch the file to disable network isolation
+            sed -i 's/def disable_network(uid, gid):/def disable_network(uid, gid):\n    return  # Function disabled/' "$BB_UTILS"
+            echo "Patched BitBake utils.py successfully"
+          else
+            echo "Warning: Could not find BitBake utils.py"
+          fi
+
+      - name: Generate Build Signature
+        run: |
+          # Generate build signature using GitHub secret
+          if [ "${{ secrets.BUILD_SIGNING_KEY }}" != "" ]; then
+            # Create a unique signature combining various elements
+            SIGNATURE_INPUT="${GITHUB_SHA}|${GITHUB_REPOSITORY}|${GITHUB_RUN_ID}|${{ secrets.BUILD_SIGNING_KEY }}"
+            BUILD_SIGNATURE=$(echo -n "$SIGNATURE_INPUT" | openssl dgst -sha256 -hmac "${{ secrets.BUILD_SIGNING_KEY }}" -hex | cut -d' ' -f2)
+          else
+            BUILD_SIGNATURE="unofficial"
+          fi
+          echo "BUILD_SIGNATURE=${BUILD_SIGNATURE}" >> $GITHUB_ENV
+
+      - name: Build Yocto Image
+        timeout-minutes: 330
+        run: |
+          cd yocto-astrial
+          
+          # Source the build environment
+          source astrial-setup-env -b build
+          
+          # Add custom configuration
+          echo 'BB_ISOLATE_NETWORK = "0"' >> conf/local.conf
+          echo 'BB_NO_NETWORK = "0"' >> conf/local.conf
+
+          # Disabling SE05x
+          echo 'BBMASK += "recipes-security/se05x/se05x_04.05.01.bb"' >> conf/local.conf
+          echo 'IMAGE_INSTALL:remove = "se05x"' >> conf/local.conf
+          
+          # Run BitBake commands with network isolation disabled
+          export BB_ISOLATE_NETWORK=0
+          export BB_NO_NETWORK=0
+          export BUILD_SIGNATURE="${BUILD_SIGNATURE}"
+          export BB_ENV_PASSTHROUGH_ADDITIONS="GITHUB_SHA GITHUB_REPOSITORY GITHUB_RUN_ID BUILD_SIGNATURE BB_ISOLATE_NETWORK BB_NO_NETWORK"
+          
+          bitbake --no-setscene -k system-astrial-image
+
+      - name: Archive Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: yocto-build-${{ matrix.machine }}
+          path: |
+            yocto-astrial/build/tmp/deploy/images/${{ matrix.machine }}/imx-boot-*-sd.bin-flash_evk
+            yocto-astrial/build/tmp/deploy/images/${{ matrix.machine }}/system-astrial-image-*.rootfs.wic.zst

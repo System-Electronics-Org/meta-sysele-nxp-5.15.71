@@ -9,6 +9,11 @@
 INHERIT += "rm_work"
 
 ##########################################################
+# Work around crates.io blocking legacy BitBake crate downloads
+##########################################################
+FETCHCMD_wget = "/usr/bin/env wget --user-agent='cargo/1.78.0 (linux-gnu)'"
+
+##########################################################
 # Build Info
 ##########################################################
 INHERIT += "image-buildinfo"

@@ -35,6 +35,12 @@ IMAGE_INSTALL:append = " librealsense2-debug-tools"
 IMAGE_INSTALL:append = " python3-pyrealsense2"
 
 #################################################################################################################
+
+## GitHub.com Signing
+IMAGE_INSTALL:append = " os-release-sign python3-pyyaml "
+
+#################################################################################################################
+
 ## Development libs for Hailo/OpenCV
 IMAGE_INSTALL:append = " libgsthailo-dev libhailort-dev libgsthailotools-dev "
 
@@ -48,7 +54,7 @@ IMAGE_INSTALL:append = " opencv opencv-dev libopencv-core-dev libopencv-highgui-
 
 #################################################################################################################
 ## Tools Extra
-IMAGE_INSTALL:append = " git joe du-dust python3-shtab python3-tldr custom-shell dtc python3-pyqt6 chromium-ozone-wayland"
+IMAGE_INSTALL:append = " git joe du-dust python3-shtab python3-tldr custom-shell dtc python3-pyqt6 chromium-ozone-wayland xauth"
 
 # Rootfs will automatically resize to fill entire space by itself, but leave some extra space for initial operations
 # Use overhead factor instead of extra space since there are some problems with the rootfs size estimation which lead to:
